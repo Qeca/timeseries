@@ -1,59 +1,65 @@
 import os
-import json
 import requests
-from aiogram import Bot, Dispatcher, executor, types
+from aiogram import Bot, Dispatcher, types
+from aiogram.types import ParseMode
+from aiogram.utils import executor
+from aiogram.contrib.fsm_storage.memory import MemoryStorage
 
-TELEGRAM_TOKEN = os.getenv("7709316638:AAG3RC37YzZXPqxu7666bl5APGKKNEweRtw")  # Ваш токен бота
+# Настройки
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "7709316638:AAG3RC37YzZXPqxu7666bl5APGKKNEweRtw")  # Токен бота
 API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 bot = Bot(token=TELEGRAM_TOKEN)
-dp = Dispatcher(bot)
+storage = MemoryStorage()
+dp = Dispatcher(bot, storage=storage)
 
 @dp.message_handler(commands=['start'])
 async def start_command(message: types.Message):
-    await message.reply("Привет! Используй команду /predict HORIZON, где HORIZON может быть 1,5,10,20,30.\nПосле этого отправь данные как JSON.\nПример:\n/predict 5")
+    await message.reply(
+        "👋 Привет!\nЯ бот для получения предсказаний. \n\n"
+        "Используй команду:\n"
+        "`/predict HORIZON`\n\n"
+        "Где HORIZON может быть: 1, 5, 10, 20, 30.\n\n"
+        "После этого я автоматически покажу предсказания на выбранное количество дней.",
+        parse_mode=ParseMode.MARKDOWN
+    )
 
 @dp.message_handler(commands=['predict'])
 async def predict_command(message: types.Message):
     parts = message.text.strip().split()
-    if len(parts) < 2:
-        await message.reply("Использование: /predict HORIZON\nПример: /predict 5")
+    if len(parts) != 2:
+        await message.reply("⚠️ Использование: `/predict HORIZON`\nПример: `/predict 5`", parse_mode=ParseMode.MARKDOWN)
         return
-    horizon = parts[1]
-    try:
-        horizon = int(horizon)
-    except:
-        await message.reply("HORIZON должен быть числом (1,5,10,20,30).")
-        return
-    
-    # Сохраним состояние горизонта в "контекст" (упрощённо)
-    # В реальном решении лучше FSM. Здесь просто храним в атрибуте.
-    # Предположим, что пользователь сразу после /predict HORIZON отправит данные.
-    message.conf = {"horizon": horizon}
-    await message.reply("Отправь данные в формате JSON: [[val], [val], ...], где val - число.")
 
-# Обработчик текстовых сообщений
-@dp.message_handler(content_types=['text'])
-async def handle_text(message: types.Message):
-    # Попытаемся считать JSON с данными
     try:
-        data = json.loads(message.text)
-        # Предположим, что до этого был вызван /predict
-        # Для реальной реализации нужно хранить контекст.
-        # Здесь просто возьмём horizon = 1 по умолчанию.
-        horizon = 1
-        # Если хотите полноценный контекст - стоит использовать FSM или базу.
-        # Упростим: допустим пользователь каждый раз после /predict сразу шлёт данные.
-        # Тогда нужно предположить, что код /predict_command будет запущен незадолго до этого.
-        # Здесь для примера — статичное значение горизонта.
-        # В реальном случае можно использовать хранение состояния в dp или redis.
-        
-        # Отправим запрос к API
-        res = requests.post(f"{API_URL}/predict/{horizon}", json={"input_data": data})
-        if res.status_code == 200:
-            pred = res.json()["prediction"]
-            await message.reply(f"Предикт: {pred}")
+        horizon = int(parts[1])
+        if horizon not in [1, 5, 10, 20, 30]:
+            raise ValueError("Недопустимый горизонт.")
+    except ValueError:
+        await message.reply("⚠️ HORIZON должен быть числом из списка: `1, 5, 10, 20, 30`.", parse_mode=ParseMode.MARKDOWN)
+        return
+
+    await message.reply("⏳ Выполняю предсказание, пожалуйста подождите...")
+
+    try:
+        # Отправляем запрос на сервер с пустыми данными
+        response = requests.post(f"{API_URL}/predict/{horizon}", json={"input_data": []})
+
+        if response.status_code == 200:
+            result = response.json()
+            dates = result.get("dates", [])
+            predictions = result.get("predictions", [])
+            formatted_result = "\n".join([f"📅 {date}: {val:.4f}" for date, val in zip(dates, predictions)])
+            await message.reply(
+                f"📊 Предсказание на **{horizon} дней**:\n\n{formatted_result}",
+                parse_mode=ParseMode.MARKDOWN
+            )
         else:
-            await message.reply(f"Ошибка на сервере: {res.text}")
+            await message.reply(f"❌ Ошибка на сервере: {response.text}")
+
     except Exception as e:
-        await message.reply(f"Ошибка: {str(e)}")
+        await message.reply(f"❌ Произошла ошибка: {str(e)}")
+
+if __name__ == "__main__":
+    print("🚀 Бот запущен!")
+    executor.start_polling(dp, skip_updates=True)

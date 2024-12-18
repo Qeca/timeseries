@@ -15,6 +15,7 @@ WEIGHTS_MAP = {
     "10": "weights/10_best_informer_model.pth",
     "20": "weights/20_best_informer_model.pth",
     "30": "weights/30_best_informer_model.pth",
+    "scaler": "weights/scaler.pkl"  # Добавляем файл скейлера
 }
 
 LOCAL_DIR = os.path.join(os.path.dirname(__file__), "weights")
@@ -26,6 +27,7 @@ def download_file(s3_client, bucket, key, local_path):
     print(f"Downloaded: {local_path}")
 
 if __name__ == "__main__":
+    # Создаём сессию
     session = boto3.session.Session(
         aws_access_key_id=AWS_ACCESS_KEY_ID,
         aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
@@ -36,7 +38,12 @@ if __name__ == "__main__":
         endpoint_url=S3_ENDPOINT_URL
     )
 
-    # Скачиваем каждый файл
-    for horizon, key in WEIGHTS_MAP.items():
+    # Скачиваем файлы
+    for name, key in WEIGHTS_MAP.items():
         local_file = os.path.join(LOCAL_DIR, os.path.basename(key))
-        download_file(s3, S3_BUCKET, key, local_file)
+        try:
+            download_file(s3, S3_BUCKET, key, local_file)
+        except Exception as e:
+            print(f"❌ Error downloading {key}: {e}")
+
+    print("✅ Все файлы успешно загружены.")

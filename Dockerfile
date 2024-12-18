@@ -3,7 +3,7 @@ FROM python:3.9-slim
 # Рабочая директория
 WORKDIR /app
 
-# Копируем все файлы проекта
+# Копируем файлы проекта
 COPY ./app /app
 
 # Устанавливаем зависимости
@@ -19,5 +19,5 @@ RUN mkdir -p /app/weights
 # Порт для FastAPI
 EXPOSE 8000
 
-# Команда для запуска: сначала скачиваем веса, потом запускаем сервер
-CMD ["sh", "-c", "python download_weights.py && uvicorn main:app --host 0.0.0.0 --port 8000"]
+# Запуск бота и API
+CMD ["sh", "-c", "python download_weights.py && uvicorn main:app --host 0.0.0.0 --port 8000 & python telegram_bot.py"]

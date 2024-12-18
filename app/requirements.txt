@@ -1,0 +1,9 @@
+fastapi
+pydantic
+aiogram==2.25.1
+uvicorn
+numpy
+torch==2.2.0 --extra-index-url https://download.pytorch.org/whl/cpu
+boto3
+joblib
+scikit-learn

@@ -218,16 +218,71 @@ def load_model(weights_path, out_len, device='cpu'):
     model.to(device)
     model.eval()
     return model
+from datetime import datetime, timedelta
 
-def run_inference(model, input_data, out_len, label_len=30, device='cpu'):
-    # input_data: np.ndarray (seq_len, 1)
-    if len(input_data.shape) == 2:
-        input_data = np.expand_dims(input_data, axis=0) # (1, seq_len, 1)
+from datetime import datetime, timedelta
+import numpy as np
+import torch
+from sklearn.preprocessing import MinMaxScaler
+
+def generate_dates(start_date, num_days):
+    """
+    Генерирует список дат начиная с заданной даты.
+    :param start_date: datetime - начальная дата (системная дата).
+    :param num_days: int - количество дней для предсказаний.
+    :return: list - список дат в формате 'YYYY-MM-DD'.
+    """
+    return [(start_date + timedelta(days=i)).strftime('%Y-%m-%d') for i in range(1, num_days + 1)]
+
+def run_inference(model, input_data, out_len, scaler, label_len=30, device='cpu'):
+    """
+    Выполняет инференс модели, добавляет даты и выполняет обратное масштабирование предсказаний.
+    :param model: torch.nn.Module - загруженная модель Informer.
+    :param input_data: np.ndarray - входные данные формы (seq_len, 1).
+    :param out_len: int - количество дней для предсказания.
+    :param scaler: MinMaxScaler - объект скейлера для обратного масштабирования.
+    :param label_len: int - длина известного входного ряда.
+    :param device: str - устройство для выполнения ('cpu' или 'cuda').
+    :return: dict - предсказанные значения и их даты.
+    """
+    # Приведение данных к нужной форме
+    if isinstance(input_data, list):
+        input_data = np.array(input_data)
+
+    if len(input_data.shape) == 1:  # Если input_data имеет форму (seq_len,)
+        input_data = np.expand_dims(input_data, axis=-1)
+    if len(input_data.shape) == 2:  # Если input_data имеет форму (seq_len, 1)
+        input_data = np.expand_dims(input_data, axis=0)  # Добавляем batch_size -> (1, seq_len, 1)
+
+    # Проверка формы
+    if len(input_data.shape) != 3 or input_data.shape[-1] != 1:
+        raise ValueError("Input data must have shape (batch_size, seq_len, 1)")
+
+    # Конвертация данных в тензор
     x_enc = torch.FloatTensor(input_data).to(device)
 
+    # Подготовка x_dec с учётом label_len и out_len
     x_dec = torch.zeros((x_enc.size(0), label_len + out_len, x_enc.size(2))).to(device)
     x_dec[:, :label_len, :] = x_enc[:, -label_len:, :]
 
+    # Инференс модели
     with torch.no_grad():
         output = model(x_enc, x_dec)  # (B, out_len, 1)
-    return output.cpu().numpy()
+    predictions = output.cpu().numpy().squeeze()  # Убираем лишние оси
+
+    # Обратное масштабирование с использованием scaler
+    if len(predictions.shape) == 1:
+        predictions = predictions.reshape(-1, 1)  # Преобразуем для работы со scaler
+    predictions = scaler.inverse_transform(predictions).flatten()
+
+    # Генерация дат на основе текущей системной даты
+    current_date = datetime.now()
+    prediction_dates = generate_dates(current_date, out_len)
+
+    # Формируем результат
+    result = {
+        "dates": prediction_dates,
+        "predictions": predictions.tolist()
+    }
+    return result
+
