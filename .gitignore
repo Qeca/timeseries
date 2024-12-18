@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+
+.vscode/
+.idea/
+
+env/
+venv/
+kursach/timeseries/data/weights/*
+/home/dsharonov/projects/kursach/timeseries/data/weights/*

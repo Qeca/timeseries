@@ -1,0 +1,1 @@
+from .parse_moex_data import fetch_moex_data
