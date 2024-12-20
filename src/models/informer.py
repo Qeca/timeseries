@@ -19,25 +19,23 @@ def plot_predictions_with_dates(prediction_dates, actuals, predictions):
     plt.ylabel('Price')
     plt.legend()
 
-    # Форматируем даты на оси X
     plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
     plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
-    plt.gcf().autofmt_xdate()  # Автоматический поворот дат для удобства
+    plt.gcf().autofmt_xdate()
     plt.grid(True)
     plt.show()
     
-# Эмбеддинги данных и позиций
 class PositionalEncoding(nn.Module):
     def __init__(self, d_model, max_len=5000):
         super(PositionalEncoding, self).__init__()
         position = torch.arange(0, max_len).unsqueeze(1)  # [max_len, 1]
         div_term = torch.exp(torch.arange(0, d_model, 2) * -(math.log(10000.0) / d_model))
         pe = torch.zeros(max_len, d_model)  # [max_len, d_model]
-        pe[:, 0::2] = torch.sin(position * div_term)      # Четные индексы
-        pe[:, 1::2] = torch.cos(position * div_term)      # Нечетные индексы
+        pe[:, 0::2] = torch.sin(position * div_term)  # Четные индексы
+        pe[:, 1::2] = torch.cos(position * div_term)  # Нечетные индексы
         pe = pe.unsqueeze(0)  # [1, max_len, d_model]
         self.register_buffer('pe', pe)
-    
+
     def forward(self, x):
         x = x + self.pe[:, :x.size(1), :].to(x.device)
         return x
@@ -54,7 +52,6 @@ class DataEmbedding(nn.Module):
         x = self.position_embedding(x)
         return self.dropout(x)
 
-# Механизмы внимания (Attention)
 class FullAttention(nn.Module):
     def __init__(self, mask_flag=False, scale=None, attention_dropout=0.1):
         super(FullAttention, self).__init__()
@@ -76,6 +73,7 @@ class FullAttention(nn.Module):
         attn = self.dropout(attn)
         output = torch.matmul(attn, values)  # [B, H, L_Q, D_v]
         return output, attn
+
 class AttentionLayer(nn.Module):
     def __init__(self, attention, d_model, n_heads, d_keys=None, d_values=None):
         super(AttentionLayer, self).__init__()
@@ -94,22 +92,18 @@ class AttentionLayer(nn.Module):
         B, L_V, _ = values.shape   # Длина значений
         H = self.n_heads
 
-        # Проекция
         queries = self.query_projection(queries).view(B, L_Q, H, -1)
         keys = self.key_projection(keys).view(B, L_K, H, -1)
         values = self.value_projection(values).view(B, L_V, H, -1)
 
-        # Перестановка
         queries = queries.permute(0, 2, 1, 3)  # [B, H, L_Q, D_k]
         keys = keys.permute(0, 2, 1, 3)        # [B, H, L_K, D_k]
         values = values.permute(0, 2, 1, 3)    # [B, H, L_V, D_v]
 
-        # Механизм внимания
         out, attn = self.inner_attention(queries, keys, values, attn_mask=attn_mask)
         out = out.permute(0, 2, 1, 3).contiguous().view(B, L_Q, -1)
         return self.out_projection(out)
 
-# Слои энкодера и декодера
 class EncoderLayer(nn.Module):
     def __init__(self, attention, d_model, d_ff=None, dropout=0.1, activation="relu"):
         super(EncoderLayer, self).__init__()
@@ -121,20 +115,21 @@ class EncoderLayer(nn.Module):
         self.norm2 = nn.LayerNorm(d_model)
         self.dropout = nn.Dropout(dropout)
         self.activation = F.relu if activation == "relu" else F.gelu
-    
+
     def forward(self, x, attn_mask=None):
         new_x = self.attention(x, x, x, attn_mask=attn_mask)
         x = x + self.dropout(new_x)
         x = self.norm1(x)
-        
+
         y = x.permute(0, 2, 1)
         y = self.dropout(self.activation(self.conv1(y)))
         y = self.dropout(self.conv2(y))
         y = y.permute(0, 2, 1)
-        
+
         x = x + y
         x = self.norm2(x)
         return x
+
 class Encoder(nn.Module):
     def __init__(self, layers, norm_layer=None):
         super(Encoder, self).__init__()
@@ -147,6 +142,7 @@ class Encoder(nn.Module):
         if self.norm is not None:
             x = self.norm(x)
         return x
+
 
 class DecoderLayer(nn.Module):
     def __init__(self, self_attention, cross_attention, d_model, d_ff=None, dropout=0.1, activation="relu"):
@@ -161,24 +157,25 @@ class DecoderLayer(nn.Module):
         self.norm3 = nn.LayerNorm(d_model)
         self.dropout = nn.Dropout(dropout)
         self.activation = F.relu if activation == "relu" else F.gelu
-    
+
     def forward(self, x, enc_output, self_attn_mask=None, cross_attn_mask=None):
         new_x = self.self_attention(x, x, x, attn_mask=self_attn_mask)
         x = x + self.dropout(new_x)
         x = self.norm1(x)
-        
+
         new_x = self.cross_attention(x, enc_output, enc_output, attn_mask=cross_attn_mask)
         x = x + self.dropout(new_x)
         x = self.norm2(x)
-        
+
         y = x.permute(0, 2, 1)
         y = self.dropout(self.activation(self.conv1(y)))
         y = self.dropout(self.conv2(y))
         y = y.permute(0, 2, 1)
-        
+
         x = x + y
         x = self.norm3(x)
         return x
+
 
 class Decoder(nn.Module):
     def __init__(self, layers, norm_layer=None, projection=None):
@@ -186,7 +183,7 @@ class Decoder(nn.Module):
         self.layers = nn.ModuleList(layers)
         self.norm = norm_layer
         self.projection = projection or nn.Linear(layers[0].norm3.normalized_shape[0], 1)
-    
+
     def forward(self, x, enc_output, self_attn_mask=None, cross_attn_mask=None):
         for layer in self.layers:
             x = layer(x, enc_output, self_attn_mask=self_attn_mask, cross_attn_mask=cross_attn_mask)
@@ -194,6 +191,7 @@ class Decoder(nn.Module):
             x = self.norm(x)
         x = self.projection(x)
         return x
+
 class Informer(nn.Module):
     def __init__(self, enc_in, dec_in, c_out, seq_len, label_len, out_len, d_model=512, n_heads=8, e_layers=2, d_layers=1, d_ff=512, dropout=0.1):
         super(Informer, self).__init__()
@@ -219,12 +217,12 @@ class Informer(nn.Module):
     def forward(self, x_enc, x_dec):
         enc_out = self.enc_embedding(x_enc)
         enc_out = self.encoder(enc_out)
-        
+
         dec_out = self.dec_embedding(x_dec)
         device = x_enc.device
         seq_len = x_dec.size(1)
         self_attn_mask = self.generate_square_subsequent_mask(seq_len).to(device)
-        
+
         dec_out = self.decoder(dec_out, enc_out, self_attn_mask=self_attn_mask)
         return dec_out
 
@@ -232,7 +230,7 @@ def train(num_epochs, model, criterion, optimizer, scheduler, train_loader, val_
     train_losses = []
     val_losses = []
     learning_rates = []
-    best_val_loss = float('inf')  # Инициализация лучшего val_loss как бесконечности
+    best_val_loss = float('inf')
 
     for epoch in range(num_epochs):
         model.train()
@@ -245,7 +243,7 @@ def train(num_epochs, model, criterion, optimizer, scheduler, train_loader, val_
 
             optimizer.zero_grad()
             output = model(x_enc, x_dec)
-            output = output[:, -pred_length:, :]  # Берём только последние pred_length шагов
+            output = output[:, -pred_length:, :]
 
             loss = criterion(output, y)
             loss.backward()
@@ -256,7 +254,6 @@ def train(num_epochs, model, criterion, optimizer, scheduler, train_loader, val_
         train_loss /= len(train_loader.dataset)
         train_losses.append(train_loss)
 
-        # Валидация
         model.eval()
         val_loss = 0.0
 
@@ -270,7 +267,7 @@ def train(num_epochs, model, criterion, optimizer, scheduler, train_loader, val_
                 x_dec_input[:, :label_length, :] = x_enc[:, -label_length:, :]
 
                 output = model(x_enc, x_dec_input)
-                output = output[:, -pred_length:, :]  # Берём только последние pred_length шагов
+                output = output[:, -pred_length:, :]
 
                 loss = criterion(output, y)
                 val_loss += loss.item() * x_enc.size(0)
@@ -278,17 +275,14 @@ def train(num_epochs, model, criterion, optimizer, scheduler, train_loader, val_
         val_loss /= len(val_loader.dataset)
         val_losses.append(val_loss)
 
-        # Обновление планировщика
         if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-            scheduler.step(val_loss)  # Для ReduceLROnPlateau передаём val_loss
+            scheduler.step(val_loss)
         else:
-            scheduler.step()  # Для остальных планировщиков просто вызываем step()
+            scheduler.step()
 
-        # Получаем текущий learning rate
         lrs = [param_group['lr'] for param_group in optimizer.param_groups]
         learning_rates.append(lrs)
 
-        # Проверяем, улучшился ли val_loss
         if val_loss < best_val_loss:
             best_val_loss = val_loss
             torch.save({
@@ -308,7 +302,6 @@ def train(num_epochs, model, criterion, optimizer, scheduler, train_loader, val_
     print(f'Обучение завершено. Лучшая Val Loss: {best_val_loss:.6f}')
     return train_losses, val_losses, learning_rates
 
-# ===================== Функция тестирования =====================
 
 def test(model, val_loader, scaler, device, label_length, pred_length):
     model.eval()
@@ -336,18 +329,14 @@ def test(model, val_loader, scaler, device, label_length, pred_length):
             actuals.extend(y.cpu().numpy())
             prediction_dates.extend(y_dates)
 
-    # Преобразуем даты
     prediction_dates = [pd.to_datetime(date) for date in prediction_dates]
 
-    # Преобразуем в numpy массивы
     predictions = np.array(predictions)
     actuals = np.array(actuals)
 
-    # Обратное масштабирование
     predictions = scaler.inverse_transform(predictions.reshape(-1, 1)).flatten()
     actuals = scaler.inverse_transform(actuals.reshape(-1, 1)).flatten()
 
-    # Расчёт метрик
     mae = mean_absolute_error(actuals, predictions)
     mse = mean_squared_error(actuals, predictions)
     mape = mean_absolute_percentage_error(actuals, predictions)

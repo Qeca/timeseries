@@ -5,8 +5,7 @@ from aiogram.types import ParseMode
 from aiogram.utils import executor
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 
-# Настройки
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "7709316638:AAG3RC37YzZXPqxu7666bl5APGKKNEweRtw")  # Токен бота
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN", "")
 API_URL = os.getenv("API_URL", "http://localhost:8000")
 
 bot = Bot(token=TELEGRAM_TOKEN)
@@ -42,7 +41,6 @@ async def predict_command(message: types.Message):
     await message.reply("⏳ Выполняю предсказание, пожалуйста подождите...")
 
     try:
-        # Отправляем запрос на сервер с пустыми данными
         response = requests.post(f"{API_URL}/predict/{horizon}", json={"input_data": []})
 
         if response.status_code == 200:

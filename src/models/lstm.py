@@ -6,7 +6,6 @@ import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 
 
-# ===================== Определение функции визуализации =====================
 
 def plot_predictions_with_dates(prediction_dates, actuals, predictions):
     plt.figure(figsize=(12, 6))
@@ -17,44 +16,39 @@ def plot_predictions_with_dates(prediction_dates, actuals, predictions):
     plt.ylabel('Price')
     plt.legend()
 
-    # Форматируем даты на оси X
     plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
     plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
-    plt.gcf().autofmt_xdate()  # Автоматический поворот дат для удобства
+    plt.gcf().autofmt_xdate()
     plt.grid(True)
     plt.show()
-    
+
+
 class LSTMModel(nn.Module):
     def __init__(self, input_size, hidden_size, num_layers, output_size, dropout=0.2):
         super(LSTMModel, self).__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
-        
-        # Энкодерная часть LSTM
+
         self.lstm_enc = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=dropout)
-        
-        # Декодерная часть LSTM
+
         self.lstm_dec = nn.LSTM(input_size, hidden_size, num_layers, batch_first=True, dropout=dropout)
-        
-        # Полносвязный слой для предсказания
+
         self.fc = nn.Linear(hidden_size, output_size)
-    
+
     def forward(self, x_enc, x_dec):
-        # Энкодер
         h0 = torch.zeros(self.num_layers, x_enc.size(0), self.hidden_size).to(x_enc.device)
         c0 = torch.zeros(self.num_layers, x_enc.size(0), self.hidden_size).to(x_enc.device)
         enc_out, (hn, cn) = self.lstm_enc(x_enc, (h0, c0))
-        
-        # Декодер
+
         dec_out, _ = self.lstm_dec(x_dec, (hn, cn))
-        
-        # Предсказание
+
         out = self.fc(dec_out)
         return out
+
 def train(num_epochs, model, criterion, optimizer, scheduler, train_loader, val_loader, label_length, pred_length, device, save_path='best_lstm_model.pth'):
     train_losses = []
     val_losses = []
-    best_val_loss = float('inf')  # Инициализация лучшего val_loss как бесконечности
+    best_val_loss = float('inf')
 
     for epoch in range(num_epochs):
         model.train()
@@ -66,17 +60,15 @@ def train(num_epochs, model, criterion, optimizer, scheduler, train_loader, val_
             y = y.to(device)
 
             optimizer.zero_grad()
-            output = model(x_enc, x_dec)  # [batch_size, label_length + pred_length, 1]
-            # Берём только предсказанные шаги
-            output = output[:, -pred_length:, :]  # [batch_size, pred_length, 1]
+            output = model(x_enc, x_dec)
+            output = output[:, -pred_length:, :]
             loss = criterion(output, y)
             
             if torch.isnan(loss):
                 print("NaN detected in loss")
-                continue  # Пропустить этот шаг, чтобы избежать остановки обучения
+                continue
             
             loss.backward()
-            # Добавление градиентного клиппинга
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
 
@@ -85,7 +77,6 @@ def train(num_epochs, model, criterion, optimizer, scheduler, train_loader, val_
         train_loss /= len(train_loader.dataset)
         train_losses.append(train_loss)
 
-        # Валидация
         model.eval()
         val_loss = 0.0
 
@@ -95,26 +86,24 @@ def train(num_epochs, model, criterion, optimizer, scheduler, train_loader, val_
                 x_dec = x_dec.to(device)
                 y = y.to(device)
 
-                output = model(x_enc, x_dec)  # [batch_size, pred_length, 1]
-                output = output[:, -pred_length:, :]  # [batch_size, pred_length, 1]
+                output = model(x_enc, x_dec)
+                output = output[:, -pred_length:, :]
                 loss = criterion(output, y)
                 
                 if torch.isnan(loss):
                     print("NaN detected in val loss")
-                    continue  # Пропустить этот шаг
+                    continue
                 
                 val_loss += loss.item() * x_enc.size(0)
 
         val_loss /= len(val_loader.dataset)
         val_losses.append(val_loss)
 
-        # Обновление планировщика
         if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-            scheduler.step(val_loss)  # Для ReduceLROnPlateau передаём val_loss
+            scheduler.step(val_loss)
         else:
-            scheduler.step()  # Для остальных планировщиков просто вызываем step()
+            scheduler.step()
 
-        # Сохранение лучшей модели
         if val_loss < best_val_loss and not np.isnan(val_loss):
             best_val_loss = val_loss
             torch.save({
@@ -144,31 +133,24 @@ def test(model, val_loader, scaler, device, label_length, pred_length):
             x_dec = x_dec.to(device)
             y = y.to(device)
 
-            # Получаем предсказания модели
-            output = model(x_enc, x_dec)  # [batch_size, seq_length, 1]
-            output = output[:, -pred_length:, :]  # Берем только последние pred_length шагов
+            output = model(x_enc, x_dec)
+            output = output[:, -pred_length:, :]
 
-            # Преобразуем к numpy
             predictions.append(output.cpu().numpy())
-            actuals.append(y[:, -pred_length:, :].cpu().numpy())  # Сравниваем с последними pred_length целевыми значениями
+            actuals.append(y[:, -pred_length:, :].cpu().numpy())
             prediction_dates.extend(y_dates)
 
-    # Преобразуем списки в numpy массивы
     predictions = np.concatenate(predictions, axis=0)  # [N, pred_length, 1]
     actuals = np.concatenate(actuals, axis=0)          # [N, pred_length, 1]
 
-    # Преобразуем dates в массив [N, pred_length]
     prediction_dates = np.array(prediction_dates).reshape(-1, pred_length)
 
-    # Обратное масштабирование
     inv_predictions = scaler.inverse_transform(predictions.reshape(-1, 1)).flatten()
     inv_actuals = scaler.inverse_transform(actuals.reshape(-1, 1)).flatten()
 
-    # Преобразуем обратно к массивам [N, pred_length]
     inv_predictions = inv_predictions.reshape(-1, pred_length)
     inv_actuals = inv_actuals.reshape(-1, pred_length)
 
-    # Расчёт метрик
     mae = mean_absolute_error(inv_actuals.flatten(), inv_predictions.flatten())
     mse = mean_squared_error(inv_actuals.flatten(), inv_predictions.flatten())
     rmse = np.sqrt(mse)
@@ -180,7 +162,6 @@ def test(model, val_loader, scaler, device, label_length, pred_length):
     print(f'RMSE: {rmse:.2f}')
     print(f'MAPE: {mape:.2f}%')
 
-    # Визуализация
     flat_dates = prediction_dates.flatten()
     plot_predictions_with_dates(flat_dates, inv_actuals.flatten(), inv_predictions.flatten())
 

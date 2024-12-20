@@ -220,7 +220,6 @@ def train(num_epochs, model, criterion, optimizer, scheduler, train_loader, val_
             train_loss += loss.item() * x_enc.size(0)
         train_loss /= len(train_loader.dataset)
 
-        # Validation
         model.eval()
         val_loss = 0.0
         with torch.no_grad():
@@ -253,10 +252,9 @@ def plot_predictions_with_dates(prediction_dates, actuals, predictions):
     plt.ylabel('Price')
     plt.legend()
 
-    # Форматируем даты на оси X
     plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m'))
     plt.gca().xaxis.set_major_locator(mdates.MonthLocator())
-    plt.gcf().autofmt_xdate()  # Автоматический поворот дат для удобства
+    plt.gcf().autofmt_xdate()
     plt.grid(True)
     plt.show()
     
@@ -276,9 +274,8 @@ def test(model, val_loader, scaler, device, label_length, pred_length):
             x_dec_input[:, :label_length, :] = x_enc[:, -label_length:, :]
 
             output = model(x_enc, x_dec_input)
-            output = output[:, -pred_length:, :]  # Берём только последние pred_length шагов
+            output = output[:, -pred_length:, :]
 
-            # Приводим тензоры к одномерному виду
             output = output.reshape(-1)
             y = y.reshape(-1)
 
@@ -286,18 +283,14 @@ def test(model, val_loader, scaler, device, label_length, pred_length):
             actuals.extend(y.cpu().numpy())
             prediction_dates.extend(y_dates)
 
-    # Преобразуем даты
     prediction_dates = [pd.to_datetime(date) for date in prediction_dates]
 
-    # Преобразуем в numpy массивы
     predictions = np.array(predictions)
     actuals = np.array(actuals)
 
-    # Обратное масштабирование
     predictions = scaler.inverse_transform(predictions.reshape(-1, 1)).flatten()
     actuals = scaler.inverse_transform(actuals.reshape(-1, 1)).flatten()
 
-    # Расчёт метрик
     mae = mean_absolute_error(actuals, predictions)
     mse = mean_squared_error(actuals, predictions)
     mape = mean_absolute_percentage_error(actuals, predictions)
